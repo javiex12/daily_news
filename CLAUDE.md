@@ -1,7 +1,7 @@
 # CLAUDE.md — AI News Bot
 
 ## Descripción
-Bot de Telegram que envía un resumen diario de noticias de IA a las 9am Lima (14:00 UTC) usando GitHub Actions como cron y Gemini 2.0 Flash para generar el resumen en español.
+Bot de Telegram que envía un resumen diario de noticias de IA a las 8am Lima (13:00 UTC) usando GitHub Actions como cron y Gemini 2.5 Flash para generar el resumen en español.
 
 ## Stack
 - **Python 3.11**

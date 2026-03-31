@@ -2,7 +2,7 @@ name: Daily AI News Bot
 
 on:
   schedule:
-    - cron: '0 14 * * *'  # 9:00am Lima time (UTC-5)
+    - cron: '0 13 * * *'  # 8:00am Lima time (UTC-5)
   workflow_dispatch:        # allow manual runs for testing
 
 jobs:
