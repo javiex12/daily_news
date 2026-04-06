@@ -1,19 +1,25 @@
 # AI News Bot
 
-Bot de Telegram que envía un resumen diario de las noticias más relevantes de IA a las 9am (hora Lima). Funciona 100% gratis usando GitHub Actions como scheduler y Gemini 2.0 Flash para generar el resumen.
+Bot de Telegram que envía un resumen diario de las noticias más relevantes de IA a las 8am (hora Lima). Funciona 100% gratis usando GitHub Actions como scheduler y Gemini 2.5 Flash para generar el resumen.
 
 ## Cómo funciona
 
-1. GitHub Actions dispara el script cada día a las 14:00 UTC (9am Lima)
-2. `bot.py` lee 4 feeds RSS de fuentes de IA y filtra las noticias de las últimas 24 horas
-3. Gemini 2.0 Flash selecciona las 5-7 más relevantes y genera un resumen en español
-4. El resumen se envía a tu chat de Telegram
+1. GitHub Actions dispara el script cada día a las 13:00 UTC (8am Lima)
+2. `bot.py` lee 7 feeds RSS de fuentes de IA de las últimas 72 horas
+3. Filtra artículos por keywords de IA, los puntúa por fuente y recencia, y toma el top 25
+4. Gemini 2.5 Flash selecciona las 5-7 más relevantes y genera un resumen en español
+5. El resumen se envía a tu chat de Telegram
 
 **Fuentes de noticias:**
-- The Verge AI
-- TechCrunch AI
-- Ars Technica Technology Lab
-- MIT Technology Review
+| Fuente | Cobertura | Peso |
+|--------|-----------|------|
+| Synced Review | IA global, fuerte en China | 1.0 |
+| The Verge AI | Sección exclusiva de IA | 1.0 |
+| TechCrunch AI | Startups y producto | 0.9 |
+| MIT Technology Review | Análisis en profundidad | 0.8 |
+| Pandaily | Tech china en general | 0.7 |
+| Rest of World | Perspectiva global no-USA | 0.7 |
+| Ars Technica | Tech generalista | 0.6 |
 
 ---
 
@@ -59,7 +65,7 @@ En tu repositorio de GitHub, ve a **Settings → Secrets and variables → Actio
 3. Haz clic en **"Daily AI News Bot"** → **"Run workflow"** para hacer una prueba manual
 4. Verifica que el mensaje llegue a tu Telegram en ~1-2 minutos
 
-A partir de ahora el bot se ejecutará automáticamente cada día a las 9am Lima.
+A partir de ahora el bot se ejecutará automáticamente cada día a las 8am Lima.
 
 ---
 
@@ -70,19 +76,28 @@ A partir de ahora el bot se ejecutará automáticamente cada día a las 9am Lima
 git clone <tu-repo>
 cd news_agent
 
-# 2. Crear entorno virtual
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+# 2. Crear entorno virtual e instalar dependencias
+./setup.sh
+source .venv/bin/activate
 
-# 3. Instalar dependencias
-pip install -r requirements.txt
-
-# 4. Configurar variables de entorno
+# 3. Configurar variables de entorno
 cp .env.example .env
 # Edita .env y rellena los 3 valores
 
-# 5. Ejecutar
+# 4. Ejecutar
 python bot.py
+```
+
+**Para probar el recap mode** (simula que no hay noticias nuevas):
+```bash
+python -c "
+import json, datetime
+fake = [{'url': f'https://fake.com/{i}', 'title': f'Fake {i}', 'date': datetime.date.today().isoformat()} for i in range(200)]
+json.dump(fake, open('sent_history.json', 'w'))
+"
+python bot.py
+# Luego borra el historial falso:
+rm sent_history.json
 ```
 
 ---
@@ -93,7 +108,7 @@ python bot.py
 news_agent/
 ├── .github/
 │   └── workflows/
-│       └── daily_news.yml   # Cron de GitHub Actions
+│       └── daily_news.yml   # Cron de GitHub Actions + cache de historial
 ├── bot.py                   # Script principal
 ├── requirements.txt         # Dependencias pinneadas
 ├── .env.example             # Plantilla de variables de entorno
@@ -104,6 +119,6 @@ news_agent/
 
 - **Python 3.11**
 - **feedparser** — lectura de RSS feeds
-- **google-genai** — Gemini 2.0 Flash API
+- **google-genai** — Gemini 2.5 Flash API
 - **python-telegram-bot** — envío de mensajes a Telegram
-- **GitHub Actions** — ejecución gratuita del cron
+- **GitHub Actions** — ejecución gratuita del cron + persistencia del historial
