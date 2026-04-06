@@ -127,4 +127,4 @@ news_agent/
 
 ## Subscribe
 
-If you'd like to receive the daily AI news digest in your own Telegram, reach out at javiernv17@gmail.com
+If you'd like to receive the daily AI news digest in my own Telegram, reach out at javiernv17@gmail.com
