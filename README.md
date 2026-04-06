@@ -1,94 +1,94 @@
 # AI News Bot
 
-Bot de Telegram que envía un resumen diario de las noticias más relevantes de IA a las 8am (hora Lima). Funciona 100% gratis usando GitHub Actions como scheduler y Gemini 2.5 Flash para generar el resumen.
+Telegram bot that sends a daily summary of the most relevant AI news at 8am Lima time. Runs 100% free using GitHub Actions as a scheduler and Gemini 2.5 Flash to generate the summary.
 
-## Cómo funciona
+## How it works
 
-1. GitHub Actions dispara el script cada día a las 13:00 UTC (8am Lima)
-2. `bot.py` lee 7 feeds RSS de fuentes de IA de las últimas 72 horas
-3. Filtra artículos por keywords de IA, los puntúa por fuente y recencia, y toma el top 25
-4. Gemini 2.5 Flash selecciona las 5-7 más relevantes y genera un resumen en español
-5. El resumen se envía a tu chat de Telegram
+1. GitHub Actions triggers the script every day at 13:00 UTC (8am Lima)
+2. `bot.py` reads 7 RSS feeds from AI sources over the last 72 hours
+3. Filters articles by AI keywords, scores them by source and recency, and takes the top 25
+4. Gemini 2.5 Flash selects the 5-7 most relevant and generates a summary in Spanish
+5. The summary is sent to your Telegram chat
 
-**Fuentes de noticias:**
-| Fuente | Cobertura | Peso |
-|--------|-----------|------|
-| Synced Review | IA global, fuerte en China | 1.0 |
-| The Verge AI | Sección exclusiva de IA | 1.0 |
-| TechCrunch AI | Startups y producto | 0.9 |
-| MIT Technology Review | Análisis en profundidad | 0.8 |
-| Pandaily | Tech china en general | 0.7 |
-| Rest of World | Perspectiva global no-USA | 0.7 |
-| Ars Technica | Tech generalista | 0.6 |
+**News sources:**
+| Source | Coverage | Weight |
+|--------|----------|--------|
+| Synced Review | Global AI, strong China coverage | 1.0 |
+| The Verge AI | Exclusive AI section | 1.0 |
+| TechCrunch AI | Startups and product | 0.9 |
+| MIT Technology Review | In-depth analysis | 0.8 |
+| Pandaily | General Chinese tech | 0.7 |
+| Rest of World | Non-USA global perspective | 0.7 |
+| Ars Technica | General tech | 0.6 |
 
 ---
 
 ## Setup
 
-### 1. Crear el bot de Telegram
+### 1. Create the Telegram bot
 
-1. Abre Telegram y busca **@BotFather**
-2. Envía `/newbot` y sigue las instrucciones
-3. BotFather te dará un **token** como `123456789:ABCdef...` — guárdalo
+1. Open Telegram and search for **@BotFather**
+2. Send `/newbot` and follow the instructions
+3. BotFather will give you a **token** like `123456789:ABCdef...` — save it
 
-### 2. Obtener tu Chat ID
+### 2. Get your Chat ID
 
-1. Envía cualquier mensaje a tu nuevo bot
-2. Abre esta URL en el navegador (reemplaza `<TOKEN>` con tu token real):
+1. Send any message to your new bot
+2. Open this URL in your browser (replace `<TOKEN>` with your real token):
    ```
    https://api.telegram.org/bot<TOKEN>/getUpdates
    ```
-3. Busca el campo `"chat"` → `"id"` en la respuesta JSON — ese es tu **chat_id**
+3. Find the `"chat"` → `"id"` field in the JSON response — that is your **chat_id**
 
-> Tip: si quieres recibir los mensajes en un grupo, añade el bot al grupo y usa el chat_id del grupo (será un número negativo).
+> Tip: if you want to receive messages in a group, add the bot to the group and use the group's chat_id (it will be a negative number).
 
-### 3. Obtener la API key de Gemini
+### 3. Get the Gemini API key
 
-1. Ve a [Google AI Studio](https://aistudio.google.com/apikey)
-2. Crea una nueva API key (el tier gratuito es suficiente)
-3. Guarda la key
+1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
+2. Create a new API key (the free tier is sufficient)
+3. Save the key
 
-### 4. Configurar los secretos en GitHub
+### 4. Configure GitHub Secrets
 
-En tu repositorio de GitHub, ve a **Settings → Secrets and variables → Actions** y añade estos 3 secretos:
+In your GitHub repository, go to **Settings → Secrets and variables → Actions** and add these 3 secrets:
 
-| Nombre | Valor |
-|--------|-------|
-| `TELEGRAM_TOKEN` | El token de tu bot |
-| `TELEGRAM_CHAT_ID` | Tu chat id (número) |
-| `GEMINI_API_KEY` | Tu API key de Google |
+| Name | Value |
+|------|-------|
+| `TELEGRAM_TOKEN` | Your bot token |
+| `TELEGRAM_CHAT_ID` | Your chat id (number) |
+| `GEMINI_API_KEY` | Your Google API key |
 
-### 5. Activar el workflow
+### 5. Enable the workflow
 
-1. Ve a la pestaña **Actions** en tu repositorio
-2. Si Actions no está habilitado, haz clic en "I understand my workflows, go ahead and enable them"
-3. Haz clic en **"Daily AI News Bot"** → **"Run workflow"** para hacer una prueba manual
-4. Verifica que el mensaje llegue a tu Telegram en ~1-2 minutos
+1. Go to the **Actions** tab in your repository
+2. If Actions is not enabled, click "I understand my workflows, go ahead and enable them"
+3. Click **"Daily AI News Bot"** → **"Run workflow"** to do a manual test
+4. Verify the message arrives in your Telegram in ~1-2 minutes
 
-A partir de ahora el bot se ejecutará automáticamente cada día a las 8am Lima.
+From now on the bot will run automatically every day at 8am Lima time.
 
 ---
 
-## Ejecución local (para testing)
+## Local execution (for testing)
 
 ```bash
-# 1. Clonar el repositorio
-git clone <tu-repo>
+# 1. Clone the repository
+git clone <your-repo>
 cd news_agent
 
-# 2. Crear entorno virtual e instalar dependencias
+# 2. Create virtual environment and install dependencies
 ./setup.sh
 source .venv/bin/activate
 
-# 3. Configurar variables de entorno
+# 3. Configure environment variables
 cp .env.example .env
-# Edita .env y rellena los 3 valores
+# Edit .env and fill in the 3 values
 
-# 4. Ejecutar
+# 4. Run
 python bot.py
 ```
 
-**Para probar el recap mode** (simula que no hay noticias nuevas):
+**To test recap mode** (simulates no new articles):
 ```bash
 python -c "
 import json, datetime
@@ -96,29 +96,35 @@ fake = [{'url': f'https://fake.com/{i}', 'title': f'Fake {i}', 'date': datetime.
 json.dump(fake, open('sent_history.json', 'w'))
 "
 python bot.py
-# Luego borra el historial falso:
+# Then delete the fake history:
 rm sent_history.json
 ```
 
 ---
 
-## Estructura del proyecto
+## Project structure
 
 ```
 news_agent/
 ├── .github/
 │   └── workflows/
-│       └── daily_news.yml   # Cron de GitHub Actions + cache de historial
-├── bot.py                   # Script principal
-├── requirements.txt         # Dependencias pinneadas
-├── .env.example             # Plantilla de variables de entorno
+│       └── daily_news.yml   # GitHub Actions cron + history cache
+├── bot.py                   # Main script
+├── requirements.txt         # Pinned dependencies
+├── .env.example             # Environment variable template
 └── README.md
 ```
 
 ## Stack
 
 - **Python 3.11**
-- **feedparser** — lectura de RSS feeds
+- **feedparser** — RSS feed reading
 - **google-genai** — Gemini 2.5 Flash API
-- **python-telegram-bot** — envío de mensajes a Telegram
-- **GitHub Actions** — ejecución gratuita del cron + persistencia del historial
+- **python-telegram-bot** — Telegram message sending
+- **GitHub Actions** — free cron execution + history persistence
+
+---
+
+## Subscribe
+
+If you'd like to receive the daily AI news digest in your own Telegram, reach out at javiernv17@gmail.com

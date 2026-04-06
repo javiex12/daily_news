@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "Bash(chmod:*)",
-      "Bash(gh run:*)"
+      "Bash(gh run:*)",
+      "WebSearch",
+      "WebFetch(domain:kr-asia.com)",
+      "WebFetch(domain:restofworld.org)",
+      "WebFetch(domain:www.technologyreview.com)",
+      "WebFetch(domain:pandaily.com)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

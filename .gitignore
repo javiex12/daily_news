@@ -2,3 +2,5 @@
 .venv/
 __pycache__/
 *.pyc
+sent_history.json
+.claude/
