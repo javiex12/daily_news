@@ -79,6 +79,10 @@ RSS_FEEDS = [
     "https://techcrunch.com/category/artificial-intelligence/feed/",
     "https://feeds.arstechnica.com/arstechnica/technology-lab",
     "https://www.technologyreview.com/feed/",
+    # China / Asia coverage
+    "https://syncedreview.com/feed",
+    "https://restofworld.org/feed/latest",
+    "https://pandaily.com/feed/",
 ]
 ```
 

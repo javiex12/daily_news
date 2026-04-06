@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -20,26 +21,84 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-RSS_FEEDS: list[str] = [
-    "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
-    "https://techcrunch.com/category/artificial-intelligence/feed/",
-    "https://feeds.arstechnica.com/arstechnica/technology-lab",
-    "https://www.technologyreview.com/feed/",
+RSS_FEEDS: list[tuple[str, float]] = [
+    ("https://syncedreview.com/feed", 1.0),
+    ("https://www.theverge.com/rss/ai-artificial-intelligence/index.xml", 1.0),
+    ("https://techcrunch.com/category/artificial-intelligence/feed/", 0.9),
+    ("https://www.technologyreview.com/feed/", 0.8),
+    ("https://pandaily.com/feed/", 0.7),
+    ("https://restofworld.org/feed/latest", 0.7),
+    ("https://feeds.arstechnica.com/arstechnica/technology-lab", 0.6),
 ]
+
+AI_KEYWORDS: set[str] = {
+    "ai", "artificial intelligence", "llm", "model", "agent", "deepseek",
+    "gemini", "claude", "openai", "gpt", "neural", "robot", "machine learning",
+    "chatbot", "generative", "kimi", "technology", "transformer",
+}
 
 MAX_CHUNK_SIZE = 4096
 MAX_RETRIES = 3
 RETRY_DELAY = 5  # seconds
+MAX_POOL_SIZE = 25
+RECENCY_BONUS_HOURS = 6
+RECENCY_BONUS = 0.2
+HISTORY_FILE = "sent_history.json"
+HISTORY_DAYS = 2  # how many days to keep in history
 
 
-async def fetch_feed(url: str) -> list[dict[str, str]]:
+def load_history() -> list[dict[str, str]]:
+    """Load sent articles history from disk."""
+    if not os.path.exists(HISTORY_FILE):
+        return []
+    try:
+        with open(HISTORY_FILE) as f:
+            return json.load(f)
+    except Exception as exc:
+        logger.warning(f"Could not load history file: {exc}")
+        return []
+
+
+def save_history(history: list[dict[str, str]], new_articles: list[dict[str, str]]) -> None:
+    """Append new articles to history and prune entries older than HISTORY_DAYS."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=HISTORY_DAYS)).date().isoformat()
+
+    for article in new_articles:
+        history.append({"url": article["url"], "title": article["title"], "date": today})
+
+    pruned = [e for e in history if e.get("date", "") >= cutoff]
+
+    with open(HISTORY_FILE, "w") as f:
+        json.dump(pruned, f, ensure_ascii=False, indent=2)
+    logger.info(f"History saved: {len(pruned)} entries ({len(new_articles)} new).")
+
+
+def passes_keyword_filter(article: dict) -> bool:
+    """Return True if the article title or description contains an AI-related keyword."""
+    text = (article["title"] + " " + article["description"]).lower()
+    return any(kw in text for kw in AI_KEYWORDS)
+
+
+def score_and_trim(articles: list[dict]) -> list[dict]:
+    """Score articles by source weight + recency bonus and return the top MAX_POOL_SIZE."""
+    now = datetime.now(timezone.utc)
+    for article in articles:
+        pub_date = datetime.fromisoformat(article["pub_date"])
+        hours_old = (now - pub_date).total_seconds() / 3600
+        recency_bonus = RECENCY_BONUS if hours_old <= RECENCY_BONUS_HOURS else 0.0
+        article["score"] = article["weight"] + recency_bonus
+    return sorted(articles, key=lambda a: a["score"], reverse=True)[:MAX_POOL_SIZE]
+
+
+async def fetch_feed(url: str, weight: float) -> list[dict]:
     """Fetch a single RSS feed and return articles from the last 24 hours."""
     try:
         logger.info(f"Fetching feed: {url}")
         feed = await asyncio.to_thread(feedparser.parse, url)
 
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-        articles: list[dict[str, str]] = []
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=72)
+        articles: list[dict] = []
 
         for entry in feed.entries:
             # Parse publication date
@@ -64,7 +123,13 @@ async def fetch_feed(url: str) -> list[dict[str, str]]:
                 description = description[:497] + "..."
 
             if link:
-                articles.append({"title": title, "url": link, "description": description})
+                articles.append({
+                    "title": title,
+                    "url": link,
+                    "description": description,
+                    "weight": weight,
+                    "pub_date": pub_date.isoformat(),
+                })
 
         logger.info(f"  → {len(articles)} articles from the last 24h")
         return articles
@@ -74,14 +139,14 @@ async def fetch_feed(url: str) -> list[dict[str, str]]:
         return []
 
 
-async def fetch_all_news() -> list[dict[str, str]]:
+async def fetch_all_news() -> list[dict]:
     """Fetch all RSS feeds concurrently and return deduplicated articles."""
-    results: list[list[dict[str, str]]] = await asyncio.gather(
-        *[fetch_feed(url) for url in RSS_FEEDS]
+    results: list[list[dict]] = await asyncio.gather(
+        *[fetch_feed(url, weight) for url, weight in RSS_FEEDS]
     )
 
     seen_urls: set[str] = set()
-    articles: list[dict[str, str]] = []
+    articles: list[dict] = []
     for feed_articles in results:
         for article in feed_articles:
             if article["url"] not in seen_urls:
@@ -92,23 +157,29 @@ async def fetch_all_news() -> list[dict[str, str]]:
     return articles
 
 
-def generate_summary(articles: list[dict[str, str]], api_key: str) -> str:
+def generate_summary(
+    articles: list[dict],
+    api_key: str,
+    recent_titles: list[str] | None = None,
+    recap_mode: bool = False,
+) -> str:
     """Call Gemini 2.5 Flash to generate a curated Spanish summary."""
     articles_text = "\n\n".join(
         f"Título: {a['title']}\nURL: {a['url']}\nDescripción: {a['description']}"
         for a in articles
     )
 
-    prompt = f"""Eres un curador de noticias de inteligencia artificial para desarrolladores hispanohablantes.
+    if recap_mode:
+        prompt = f"""Eres un curador de noticias de inteligencia artificial para desarrolladores hispanohablantes.
 
-Analiza estas {len(articles)} noticias de las últimas 24 horas y realiza lo siguiente:
+Hoy no hay artículos completamente nuevos, pero estos son los más relevantes de los últimos días que merecen destacarse.
 
-1. Selecciona las 5-7 más relevantes e impactantes para el ecosistema de IA.
-2. Para cada noticia seleccionada escribe:
+1. Selecciona las 3-5 más importantes e impactantes.
+2. Para cada una escribe:
    - El título en *negrita*
-   - Un resumen de 2-3 líneas explicando qué pasó y por qué importa para devs o la industria
+   - Un resumen de 2-3 líneas explicando qué pasó y por qué sigue siendo relevante
    - El link como [Leer más](url)
-3. Al final añade una sección titulada "🔮 Tendencia del día" con 3-4 líneas analizando el patrón o tema dominante en las noticias de hoy.
+3. Al final añade una sección titulada "🔮 Tendencia del día" con 3-4 líneas sobre el patrón dominante de estos días.
 
 Reglas de formato (Telegram Markdown):
 - Usa *texto* para negrita
@@ -122,8 +193,37 @@ Tono: informativo y conversacional, como un newsletter para desarrolladores. Esc
 NOTICIAS:
 {articles_text}
 """
+    else:
+        avoid_section = ""
+        if recent_titles:
+            titles_list = "\n".join(f"- {t}" for t in recent_titles)
+            avoid_section = f"\nTEMAS YA CUBIERTOS AYER (evita repetirlos aunque aparezcan con otro artículo):\n{titles_list}\n"
 
-    logger.info("Generating summary with Gemini 2.5 Flash...")
+        prompt = f"""Eres un curador de noticias de inteligencia artificial para desarrolladores hispanohablantes.
+
+Analiza estas {len(articles)} noticias de las últimas 24 horas y realiza lo siguiente:
+
+1. Selecciona las 5-7 más relevantes e impactantes para el ecosistema de IA. Si hay menos de 5, incluye todas.
+2. Para cada noticia seleccionada escribe:
+   - El título en *negrita*
+   - Un resumen de 2-3 líneas explicando qué pasó y por qué importa para devs o la industria
+   - El link como [Leer más](url)
+3. Al final añade una sección titulada "🔮 Tendencia del día" con 3-4 líneas analizando el patrón o tema dominante en las noticias de hoy.
+{avoid_section}
+Reglas de formato (Telegram Markdown):
+- Usa *texto* para negrita
+- Usa _texto_ para cursiva
+- Usa [texto](url) para links
+- Separa cada noticia con una línea en blanco
+- NO uses ## ni # ni otros marcadores de encabezado
+
+Tono: informativo y conversacional, como un newsletter para desarrolladores. Escribe en español.
+
+NOTICIAS:
+{articles_text}
+"""
+
+    logger.info(f"Generating summary with Gemini 2.5 Flash (recap_mode={recap_mode})...")
     client = genai.Client(api_key=api_key)
     response = client.models.generate_content(
         model="gemini-2.5-flash",
@@ -204,24 +304,54 @@ async def main() -> None:
         logger.error("Missing required environment variables: TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, GEMINI_API_KEY")
         sys.exit(1)
 
-    # 1. Fetch news
-    articles = await fetch_all_news()
+    # 1. Load history
+    history = load_history()
+    seen_urls: set[str] = {e["url"] for e in history}
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date().isoformat()
+    recent_titles = [e["title"] for e in history if e.get("date", "") >= yesterday]
 
-    if not articles:
-        logger.warning("No articles found in the last 24 hours.")
-        await send_fallback(token, chat_id, "No se encontraron noticias de IA en las últimas 24 horas.")
+    # 2. Fetch all news
+    all_articles = await fetch_all_news()
+
+    if not all_articles:
+        logger.error("All feeds failed — no articles collected.")
+        await send_fallback(token, chat_id, "No se pudo obtener noticias de ningún feed RSS.")
         return
 
-    # 2. Generate summary
+    # 3. Deduplicate by history, filter by keywords, score and trim
+    new_articles = [a for a in all_articles if a["url"] not in seen_urls]
+    logger.info(f"After dedup: {len(new_articles)} new articles (filtered {len(all_articles) - len(new_articles)} already seen)")
+
+    filtered = [a for a in new_articles if passes_keyword_filter(a)]
+    logger.info(f"After keyword filter: {len(filtered)} articles")
+
+    recap_mode = False
+    if filtered:
+        pool = score_and_trim(filtered)
+    else:
+        # No new articles — recap mode with best of all_articles
+        logger.warning("No new articles after dedup+filter. Switching to recap mode.")
+        recap_mode = True
+        recent_titles = None  # don't pass yesterday's titles in recap mode
+        pool = score_and_trim([a for a in all_articles if passes_keyword_filter(a)])
+
+    logger.info(f"Pool sent to Gemini: {len(pool)} articles (recap_mode={recap_mode})")
+
+    # 4. Generate summary
     try:
-        summary = generate_summary(articles, gemini_key)
+        summary = generate_summary(pool, gemini_key, recent_titles, recap_mode)
     except Exception as exc:
         logger.error(f"Gemini API error: {exc}")
         await send_fallback(token, chat_id, f"Error al conectar con Gemini API: {exc}")
         return
 
-    # 3. Send to Telegram
-    header = f"*📰 Noticias de IA — {datetime.now(timezone.utc).strftime('%d/%m/%Y')}*\n\n"
+    # 5. Send to Telegram
+    date_str = datetime.now(timezone.utc).strftime("%d/%m/%Y")
+    if recap_mode:
+        header = f"*📰 Lo más relevante — {date_str}*\n\n"
+    else:
+        header = f"*📰 Noticias de IA — {date_str}*\n\n"
+
     full_message = header + summary
     chunks = chunk_message(full_message)
 
@@ -235,6 +365,10 @@ async def main() -> None:
     except TelegramError as exc:
         logger.error(f"Failed to send message after {MAX_RETRIES} attempts: {exc}")
         sys.exit(1)
+
+    # 6. Persist history (only in normal mode — recap articles are already in history)
+    if not recap_mode:
+        save_history(history, pool)
 
 
 if __name__ == "__main__":
