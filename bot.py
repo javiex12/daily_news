@@ -3,12 +3,14 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
 import feedparser
 from dotenv import load_dotenv
 from google import genai
+from openai import OpenAI
 from telegram import Bot
 from telegram.error import TelegramError
 
@@ -224,13 +226,42 @@ NOTICIAS:
 """
 
     logger.info(f"Generating summary with Gemini 2.5 Flash (recap_mode={recap_mode})...")
-    client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-    )
-    logger.info("Summary generated successfully.")
-    return response.text
+    gemini_error: Exception | None = None
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            client = genai.Client(api_key=api_key)
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+            )
+            logger.info("Summary generated successfully.")
+            return response.text
+        except Exception as exc:
+            gemini_error = exc
+            wait = 2 ** attempt  # 1s, 2s, 4s
+            if attempt < max_retries - 1:
+                logger.warning(f"Gemini attempt {attempt + 1}/{max_retries} failed: {exc}. Retrying in {wait}s...")
+                time.sleep(wait)
+
+    logger.warning(f"[WARN] Gemini unavailable after {max_retries} retries, switching to DeepSeek")
+    deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if not deepseek_key:
+        raise RuntimeError(
+            f"All providers failed. Gemini: {gemini_error}. DEEPSEEK_API_KEY not configured."
+        )
+    try:
+        ds_client = OpenAI(api_key=deepseek_key, base_url="https://api.deepseek.com")
+        ds_response = ds_client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[{"role": "user", "content": prompt}],
+        )
+        logger.info("Summary generated successfully via DeepSeek.")
+        return ds_response.choices[0].message.content
+    except Exception as ds_exc:
+        raise RuntimeError(
+            f"All providers failed. Gemini: {gemini_error}. DeepSeek: {ds_exc}"
+        )
 
 
 def chunk_message(text: str, max_size: int = MAX_CHUNK_SIZE) -> list[str]:
