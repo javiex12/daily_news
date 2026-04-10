@@ -164,8 +164,8 @@ def generate_summary(
     api_key: str,
     recent_titles: list[str] | None = None,
     recap_mode: bool = False,
-) -> str:
-    """Call Gemini 2.5 Flash to generate a curated Spanish summary."""
+) -> tuple[str, str]:
+    """Call Gemini 2.5 Flash to generate a curated Spanish summary. Returns (text, provider)."""
     articles_text = "\n\n".join(
         f"Título: {a['title']}\nURL: {a['url']}\nDescripción: {a['description']}"
         for a in articles
@@ -236,7 +236,7 @@ NOTICIAS:
                 contents=prompt,
             )
             logger.info("Summary generated successfully.")
-            return response.text
+            return response.text, "gemini"
         except Exception as exc:
             gemini_error = exc
             wait = 2 ** attempt  # 1s, 2s, 4s
@@ -257,7 +257,7 @@ NOTICIAS:
             messages=[{"role": "user", "content": prompt}],
         )
         logger.info("Summary generated successfully via DeepSeek.")
-        return ds_response.choices[0].message.content
+        return ds_response.choices[0].message.content, "deepseek"
     except Exception as ds_exc:
         raise RuntimeError(
             f"All providers failed. Gemini: {gemini_error}. DeepSeek: {ds_exc}"
@@ -370,7 +370,7 @@ async def main() -> None:
 
     # 4. Generate summary
     try:
-        summary = generate_summary(pool, gemini_key, recent_titles, recap_mode)
+        summary, provider = generate_summary(pool, gemini_key, recent_titles, recap_mode)
     except Exception as exc:
         logger.error(f"Gemini API error: {exc}")
         await send_fallback(token, chat_id, f"Error al conectar con Gemini API: {exc}")
@@ -383,7 +383,8 @@ async def main() -> None:
     else:
         header = f"*📰 Noticias de IA — {date_str}*\n\n"
 
-    full_message = header + summary
+    footer = "\n\n_Generado con Gemini 2.5 Flash_" if provider == "gemini" else "\n\n_Generado con DeepSeek Chat_"
+    full_message = header + summary + footer
     chunks = chunk_message(full_message)
 
     logger.info(f"Sending {len(chunks)} message chunk(s) to Telegram...")
