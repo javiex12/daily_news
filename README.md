@@ -8,7 +8,8 @@ Telegram bot that sends a daily summary of the most relevant AI news at 8am Lima
 2. `bot.py` reads 7 RSS feeds from AI sources over the last 72 hours
 3. Filters articles by AI keywords, scores them by source and recency, and takes the top 25
 4. Gemini 2.5 Flash selects the 5-7 most relevant and generates a summary in Spanish
-5. The summary is sent to your Telegram chat
+5. If Gemini fails after 3 retries, DeepSeek Chat is used as a fallback provider
+6. The summary is sent to your Telegram chat (the footer indicates which model generated it)
 
 **News sources:**
 | Source | Coverage | Weight |
@@ -48,17 +49,24 @@ Telegram bot that sends a daily summary of the most relevant AI news at 8am Lima
 2. Create a new API key (the free tier is sufficient)
 3. Save the key
 
-### 4. Configure GitHub Secrets
+### 4. Get the DeepSeek API key (fallback)
 
-In your GitHub repository, go to **Settings → Secrets and variables → Actions** and add these 3 secrets:
+1. Go to [DeepSeek Platform](https://platform.deepseek.com/api_keys)
+2. Create a new API key
+3. Save the key — it will only be used if Gemini fails
+
+### 5. Configure GitHub Secrets
+
+In your GitHub repository, go to **Settings → Secrets and variables → Actions** and add these 4 secrets:
 
 | Name | Value |
 |------|-------|
 | `TELEGRAM_TOKEN` | Your bot token |
 | `TELEGRAM_CHAT_ID` | Your chat id (number) |
 | `GEMINI_API_KEY` | Your Google API key |
+| `DEEPSEEK_API_KEY` | Your DeepSeek API key (fallback) |
 
-### 5. Enable the workflow
+### 6. Enable the workflow
 
 1. Go to the **Actions** tab in your repository
 2. If Actions is not enabled, click "I understand my workflows, go ahead and enable them"
@@ -119,9 +127,24 @@ news_agent/
 
 - **Python 3.11**
 - **feedparser** — RSS feed reading
-- **google-genai** — Gemini 2.5 Flash API
+- **google-genai** — Gemini 2.5 Flash API (primary)
+- **openai** — DeepSeek Chat API via OpenAI-compatible client (fallback)
 - **python-telegram-bot** — Telegram message sending
 - **GitHub Actions** — free cron execution + history persistence
+
+---
+
+## Fallback flow (Gemini → DeepSeek)
+
+To keep the daily digest reliable even when Gemini is rate-limited or down, the bot uses a two-provider chain:
+
+1. **Gemini 2.5 Flash** is called first, with up to 3 retries and exponential backoff (1s → 2s → 4s)
+2. If all 3 attempts fail, the bot switches to **DeepSeek Chat** (`deepseek-chat` via OpenAI-compatible endpoint `https://api.deepseek.com`) using the same prompt
+3. If `DEEPSEEK_API_KEY` is missing, or DeepSeek also fails, a fallback error message is sent to Telegram explaining what went wrong
+
+The Telegram message footer shows which model was actually used:
+- `_Generado con Gemini 2.5 Flash_` — normal path
+- `_Generado con DeepSeek Chat_` — fallback path (useful signal that Gemini is having issues)
 
 ---
 
